@@ -17,6 +17,7 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Yup from 'yup';
 
+import { UserProfileModal } from '@/components/UserProfileModal';
 import { Colors, Spacing } from '@/constants/theme';
 import { useAppDispatch, useAppSelector } from '@/store';
 import {
@@ -25,6 +26,7 @@ import {
   fetchEventById,
   updateEvent,
 } from '@/store/eventsSlice';
+import { promptUserProfile } from '@/store/userSlice';
 import { EventCategory, EventFormValues } from '@/types/event';
 
 const CATEGORIES: EventCategory[] = [
@@ -92,6 +94,8 @@ export default function CreateEventScreen() {
     category: isEditMode && selectedEvent ? selectedEvent.category : '',
   };
 
+  const user = useAppSelector((s) => s.user.user);
+
   const formik = useFormik<EventFormValues>({
     initialValues,
     enableReinitialize: true,
@@ -100,6 +104,10 @@ export default function CreateEventScreen() {
       if (isEditMode && id) {
         dispatch(updateEvent({ id, values }));
       } else {
+        if (!user) {
+          dispatch(promptUserProfile({ type: 'create_event' }));
+          return;
+        }
         dispatch(createEvent(values));
       }
     },
@@ -274,6 +282,7 @@ export default function CreateEventScreen() {
           </Pressable>
         </Animated.View>
       </ScrollView>
+      <UserProfileModal />
     </KeyboardAvoidingView>
   );
 }

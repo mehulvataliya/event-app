@@ -1,15 +1,14 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View, ActivityIndicator } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, {
-  useSharedValue,
   useAnimatedStyle,
-  withSpring,
+  useSharedValue,
   withSequence,
-  withTiming,
+  withSpring,
 } from 'react-native-reanimated';
 
-import { RSVPStatus } from '@/types/event';
 import { Spacing } from '@/constants/theme';
+import { RSVPStatus } from '@/types/event';
 
 interface RSVPButtonProps {
   status: RSVPStatus;
@@ -26,59 +25,46 @@ export function RSVPButton({ status, loading = false, onRSVP }: RSVPButtonProps)
     transform: [{ scale: scale.value }],
   }));
 
-  const handlePress = (newStatus: RSVPStatus) => {
-    scale.value = withSequence(
-      withSpring(0.92, { damping: 10 }),
-      withSpring(1.04, { damping: 10 }),
-      withSpring(1, { damping: 12 })
-    );
-    onRSVP(newStatus);
-  };
+  const isBooked = status === 'going';
 
-  const isGoing = status === 'going';
-  const isNotGoing = status === 'not-going';
+  const handlePress = () => {
+    scale.value = withSequence(
+      withSpring(0.94, { damping: 10 }),
+      withSpring(1.03, { damping: 10 }),
+      withSpring(1, { damping: 12 }),
+    );
+    if (isBooked) {
+      onRSVP(null);
+    } else {
+      onRSVP('going');
+    }
+  };
 
   return (
     <View style={styles.container}>
-      {/* Going button */}
       <AnimatedPressable
         style={[
           styles.button,
-          styles.goingButton,
-          isGoing && styles.goingActive,
+          isBooked ? styles.bookedButton : styles.bookButton,
           animatedStyle,
         ]}
-        onPress={() => handlePress(isGoing ? null : 'going')}
+        onPress={handlePress}
         disabled={loading}
       >
-        {loading && isGoing ? (
-          <ActivityIndicator color="#fff" size="small" />
+        {loading ? (
+          <ActivityIndicator color={isBooked ? '#EF4444' : '#FFFFFF'} size="small" />
+        ) : isBooked ? (
+          <>
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>✓ Booked</Text>
+            </View>
+            <Text style={styles.cancelText}>Cancel Booking</Text>
+          </>
         ) : (
           <>
-            <Text style={styles.buttonIcon}>{isGoing ? '✓' : '🎉'}</Text>
-            <Text style={[styles.buttonText, isGoing && styles.activeText]}>
-              {isGoing ? "You're Going!" : "I'm Going"}
-            </Text>
+            <Text style={styles.icon}>🎟️</Text>
+            <Text style={styles.bookText}>Book Event</Text>
           </>
-        )}
-      </AnimatedPressable>
-
-      {/* Not Going button */}
-      <AnimatedPressable
-        style={[
-          styles.button,
-          styles.notGoingButton,
-          isNotGoing && styles.notGoingActive,
-        ]}
-        onPress={() => handlePress(isNotGoing ? null : 'not-going')}
-        disabled={loading}
-      >
-        {loading && isNotGoing ? (
-          <ActivityIndicator color="#EF4444" size="small" />
-        ) : (
-          <Text style={[styles.buttonText, styles.notGoingText, isNotGoing && styles.notGoingActiveText]}>
-            {isNotGoing ? '✕ Declined' : 'Can\'t Go'}
-          </Text>
         )}
       </AnimatedPressable>
     </View>
@@ -87,50 +73,53 @@ export function RSVPButton({ status, loading = false, onRSVP }: RSVPButtonProps)
 
 const styles = StyleSheet.create({
   container: {
-    flexDirection: 'row',
-    gap: Spacing.two,
+    width: '100%',
   },
   button: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 14,
+    gap: Spacing.two,
+    paddingVertical: 16,
+    paddingHorizontal: Spacing.four,
     borderRadius: 16,
-    borderWidth: 2,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
   },
-  goingButton: {
-    flex: 2,
-    borderColor: '#6C63FF',
-    backgroundColor: 'transparent',
-  },
-  goingActive: {
+  bookButton: {
     backgroundColor: '#6C63FF',
-    borderColor: '#6C63FF',
+    shadowColor: '#6C63FF',
   },
-  notGoingButton: {
-    flex: 1,
+  bookedButton: {
+    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+    borderWidth: 1.5,
     borderColor: '#EF4444',
-    backgroundColor: 'transparent',
+    shadowColor: 'transparent',
   },
-  notGoingActive: {
-    backgroundColor: 'rgba(239,68,68,0.12)',
+  icon: {
+    fontSize: 18,
   },
-  buttonIcon: {
+  bookText: {
+    color: '#FFFFFF',
     fontSize: 16,
+    fontWeight: '700',
   },
-  buttonText: {
+  badge: {
+    backgroundColor: '#10B981',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  badgeText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  cancelText: {
+    color: '#EF4444',
     fontSize: 15,
     fontWeight: '700',
-    color: '#6C63FF',
-  },
-  activeText: {
-    color: '#FFFFFF',
-  },
-  notGoingText: {
-    color: '#EF4444',
-  },
-  notGoingActiveText: {
-    color: '#EF4444',
   },
 });

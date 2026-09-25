@@ -21,9 +21,11 @@ import Animated, {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { EventCard } from '@/components/EventCard';
+import { UserProfileModal } from '@/components/UserProfileModal';
 import { BottomTabInset, Colors, Spacing } from '@/constants/theme';
 import { useAppDispatch, useAppSelector } from '@/store';
 import { fetchEvents } from '@/store/eventsSlice';
+import { openProfileModal, promptUserProfile } from '@/store/userSlice';
 import { Event } from '@/types/event';
 
 const CATEGORIES = [
@@ -43,6 +45,7 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 export default function EventsListScreen() {
   const dispatch = useAppDispatch();
   const { list, listStatus, rsvpStatuses } = useAppSelector((s) => s.events);
+  const user = useAppSelector((s) => s.user.user);
   const scheme = useColorScheme();
   const isDark = scheme === 'dark';
   const colors = Colors[isDark ? 'dark' : 'light'];
@@ -68,7 +71,6 @@ export default function EventsListScreen() {
     setRefreshing(false);
   }, [dispatch]);
 
-  // Filtered list
   const filteredEvents: Event[] = list.filter((e) => {
     const matchesSearch =
       e.title.toLowerCase().includes(search.toLowerCase()) ||
@@ -82,6 +84,10 @@ export default function EventsListScreen() {
     fabScale.value = withSpring(0.88, { damping: 10 }, () => {
       fabScale.value = withSpring(1, { damping: 12 });
     });
+    if (!user) {
+      dispatch(promptUserProfile({ type: 'create_event' }));
+      return;
+    }
     router.push('/events/create' as any);
   };
 
@@ -93,12 +99,28 @@ export default function EventsListScreen() {
         <View style={styles.header}>
           <View>
             <Text style={[styles.headerSub, { color: colors.textSecondary }]}>
-              Discover
+              {user ? `Hello, ${user.username} 👋` : 'Discover'}
             </Text>
             <Text style={[styles.headerTitle, { color: colors.text }]}>
               Events
             </Text>
           </View>
+
+          <Pressable
+            style={[
+              styles.profileChip,
+              { backgroundColor: isDark ? '#212225' : '#F0F0F3' },
+            ]}
+            onPress={() => dispatch(openProfileModal())}
+          >
+            <Text style={{ fontSize: 15 }}>👤</Text>
+            <Text
+              style={[styles.profileName, { color: colors.text }]}
+              numberOfLines={1}
+            >
+              {user ? user.username : 'Set Profile'}
+            </Text>
+          </Pressable>
         </View>
 
         <View
@@ -224,6 +246,8 @@ export default function EventsListScreen() {
       >
         <Text style={styles.fabIcon}>＋</Text>
       </AnimatedPressable>
+
+      <UserProfileModal />
     </View>
   );
 }
@@ -237,11 +261,24 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: Spacing.three,
     paddingTop: Spacing.two,
     paddingBottom: Spacing.two,
+  },
+  profileChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+    maxWidth: 160,
+  },
+  profileName: {
+    fontSize: 13,
+    fontWeight: '700',
   },
   headerSub: {
     fontSize: 13,
@@ -273,14 +310,19 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   chipList: {
+    height: 60,
     flexGrow: 0,
     marginBottom: Spacing.two,
   },
   chipContent: {
     paddingHorizontal: Spacing.three,
+    alignItems: 'center',
     gap: 8,
   },
   chip: {
+    minHeight: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
     paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: 20,
@@ -289,6 +331,7 @@ const styles = StyleSheet.create({
   chipText: {
     fontSize: 13,
     fontWeight: '600',
+    lineHeight: 18,
   },
   listContent: {
     paddingTop: Spacing.one,

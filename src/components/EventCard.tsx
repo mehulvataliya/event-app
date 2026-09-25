@@ -86,7 +86,7 @@ export function EventCard({ event, rsvpStatus }: EventCardProps) {
         </View>
         {rsvpStatus === 'going' && (
           <View style={styles.rsvpBadge}>
-            <Text style={styles.rsvpBadgeText}>✓ Going</Text>
+            <Text style={styles.rsvpBadgeText}>✓ Booked</Text>
           </View>
         )}
       </View>
@@ -127,16 +127,6 @@ export function EventCard({ event, rsvpStatus }: EventCardProps) {
         </View>
 
         <View style={styles.footer}>
-          <View
-            style={[
-              styles.attendeePill,
-              { backgroundColor: isDark ? '#212225' : '#F0F0F3' },
-            ]}
-          >
-            <Text style={[styles.attendeeText, { color: catColor }]}>
-              👥 {event.attendees.toLocaleString('en-IN')} attending
-            </Text>
-          </View>
           <Text
             style={[
               styles.organizer,
@@ -228,15 +218,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginTop: Spacing.one,
-  },
-  attendeePill: {
-    borderRadius: 20,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  attendeeText: {
-    fontSize: 12,
-    fontWeight: '600',
   },
   organizer: {
     fontSize: 12,

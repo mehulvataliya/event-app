@@ -2,6 +2,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -13,47 +14,79 @@ import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { RSVPButton } from '@/components/RSVPButton';
+import { UserProfileModal } from '@/components/UserProfileModal';
 import { BottomTabInset, Colors, Spacing } from '@/constants/theme';
 import { useAppDispatch, useAppSelector } from '@/store';
 import {
+  clearDeleteStatus,
   clearSelectedEvent,
+  deleteEvent,
   fetchEventById,
   rsvpEvent,
 } from '@/store/eventsSlice';
+import { promptUserProfile } from '@/store/userSlice';
 import { RSVPStatus } from '@/types/event';
 
 export default function EventDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const dispatch = useAppDispatch();
-  const { selectedEvent, detailStatus, rsvpStatuses, rsvpStatus } =
-    useAppSelector((s) => s.events);
+  const {
+    selectedEvent,
+    detailStatus,
+    rsvpStatuses,
+    rsvpStatus,
+    deleteStatus,
+  } = useAppSelector((s) => s.events);
+  const user = useAppSelector((s) => s.user.user);
+
   const scheme = useColorScheme();
   const isDark = scheme === 'dark';
   const colors = Colors[isDark ? 'dark' : 'light'];
 
   const currentRSVP: RSVPStatus = rsvpStatuses[id] ?? null;
   const isRSVPLoading = rsvpStatus === 'loading';
+  const isDeleting = deleteStatus === 'loading';
 
   useEffect(() => {
-    if (id) {
-      dispatch(fetchEventById(id));
-    }
+    if (id) dispatch(fetchEventById(id));
     return () => {
       dispatch(clearSelectedEvent());
+      dispatch(clearDeleteStatus());
     };
   }, [id, dispatch]);
 
-  const handleRSVP = (newStatus: RSVPStatus) => {
-    if (id) {
-      dispatch(rsvpEvent({ id, status: newStatus }));
+  useEffect(() => {
+    if (deleteStatus === 'succeeded') {
+      router.replace('/(tabs)/' as any);
     }
+  }, [deleteStatus]);
+
+  const handleRSVP = (newStatus: RSVPStatus) => {
+    if (!id) return;
+    if (newStatus === 'going' && !user) {
+      dispatch(promptUserProfile({ type: 'rsvp_event', eventId: id }));
+      return;
+    }
+    dispatch(rsvpEvent({ id, status: newStatus }));
   };
 
-  const handleEdit = () => {
-    router.push(`/events/create?id=${id}` as any);
+  const handleEdit = () => router.push(`/events/create?id=${id}` as any);
+
+  const handleDelete = () => {
+    Alert.alert(
+      'Delete Event',
+      'Are you sure you want to delete this event? This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => dispatch(deleteEvent(id)),
+        },
+      ],
+    );
   };
 
-  // ── Loading state ─────────────────────────────────────────────────────────
   if (detailStatus === 'loading' || detailStatus === 'idle') {
     return (
       <View style={[styles.centerWrap, { backgroundColor: colors.background }]}>
@@ -65,7 +98,6 @@ export default function EventDetailScreen() {
     );
   }
 
-  // ── Error state ───────────────────────────────────────────────────────────
   if (detailStatus === 'failed' || !selectedEvent) {
     return (
       <View style={[styles.centerWrap, { backgroundColor: colors.background }]}>
@@ -82,7 +114,6 @@ export default function EventDetailScreen() {
 
   const e = selectedEvent;
 
-  // Format date/time
   const dateObj = new Date(`${e.date}T${e.time}`);
   const fullDate = dateObj.toLocaleDateString('en-IN', {
     weekday: 'long',
@@ -103,7 +134,7 @@ export default function EventDetailScreen() {
     <View style={[styles.root, { backgroundColor: colors.background }]}>
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: BottomTabInset + 120 }}
+        contentContainerStyle={{ paddingBottom: BottomTabInset + 130 }}
       >
         <Animated.View
           entering={FadeIn.duration(400)}
@@ -114,9 +145,22 @@ export default function EventDetailScreen() {
               <Pressable style={styles.navBtn} onPress={() => router.back()}>
                 <Text style={styles.navBtnText}>←</Text>
               </Pressable>
-              <Pressable style={styles.navBtn} onPress={handleEdit}>
-                <Text style={styles.navBtnText}>✎</Text>
-              </Pressable>
+              <View style={styles.heroNavRight}>
+                <Pressable style={styles.navBtn} onPress={handleEdit}>
+                  <Text style={styles.navBtnText}>✎</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.navBtn, styles.navBtnDanger]}
+                  onPress={handleDelete}
+                  disabled={isDeleting}
+                >
+                  {isDeleting ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <Text style={styles.navBtnText}>🗑</Text>
+                  )}
+                </Pressable>
+              </View>
             </View>
           </SafeAreaView>
 
@@ -129,13 +173,6 @@ export default function EventDetailScreen() {
             style={styles.heroTitle}
           >
             {e.title}
-          </Animated.Text>
-
-          <Animated.Text
-            entering={FadeInDown.delay(220).springify()}
-            style={styles.heroAttendees}
-          >
-            👥 {e.attendees.toLocaleString('en-IN')} attending
           </Animated.Text>
         </Animated.View>
 
@@ -153,6 +190,7 @@ export default function EventDetailScreen() {
               subColor={colors.textSecondary}
             />
           </View>
+
           <View style={styles.infoRow}>
             <InfoCard
               icon="🕐"
@@ -193,22 +231,24 @@ export default function EventDetailScreen() {
             </Text>
           </View>
 
-          <View
-            style={[
-              styles.statCard,
-              {
-                backgroundColor: e.coverColor + '22',
-                borderColor: e.coverColor + '44',
-              },
-            ]}
-          >
-            <Text style={[styles.statNumber, { color: e.coverColor }]}>
-              {e.attendees.toLocaleString('en-IN')}
-            </Text>
-            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
-              People are attending this event
-            </Text>
-          </View>
+          {currentRSVP === 'going' && (
+            <View
+              style={[
+                styles.statCard,
+                {
+                  backgroundColor: '#10B98115',
+                  borderColor: '#10B98144',
+                },
+              ]}
+            >
+              <Text style={{ fontSize: 24, fontWeight: '700' }}>✓ Booked</Text>
+              <Text
+                style={[styles.statLabel, { color: '#10B981', fontWeight: '700' }]}
+              >
+                You are registered for this event
+              </Text>
+            </View>
+          )}
         </Animated.View>
       </ScrollView>
 
@@ -226,10 +266,8 @@ export default function EventDetailScreen() {
           <View style={styles.rsvpInner}>
             <Text style={[styles.rsvpLabel, { color: colors.textSecondary }]}>
               {currentRSVP === 'going'
-                ? "🎉 You're on the list!"
-                : currentRSVP === 'not-going'
-                  ? '😔 Maybe next time'
-                  : 'Will you attend?'}
+                ? '🎉 You have booked this event!'
+                : 'Want to attend this event?'}
             </Text>
             <RSVPButton
               status={currentRSVP}
@@ -239,9 +277,12 @@ export default function EventDetailScreen() {
           </View>
         </SafeAreaView>
       </Animated.View>
+
+      <UserProfileModal />
     </View>
   );
 }
+
 interface InfoCardProps {
   icon: string;
   label: string;
@@ -270,19 +311,14 @@ function InfoCard({
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-  },
+  root: { flex: 1 },
   centerWrap: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     gap: Spacing.two,
   },
-  loadingText: {
-    fontSize: 15,
-    fontWeight: '500',
-  },
+  loadingText: { fontSize: 15, fontWeight: '500' },
   errorEmoji: { fontSize: 52 },
   errorTitle: { fontSize: 20, fontWeight: '700' },
   backBtn: {
@@ -305,7 +341,12 @@ const styles = StyleSheet.create({
   heroNav: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: Spacing.four,
+  },
+  heroNavRight: {
+    flexDirection: 'row',
+    gap: Spacing.two,
   },
   navBtn: {
     width: 40,
@@ -315,11 +356,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  navBtnText: {
-    color: '#FFF',
-    fontSize: 18,
-    fontWeight: '700',
+  navBtnDanger: {
+    backgroundColor: 'rgba(239,68,68,0.45)',
   },
+  navBtnText: { color: '#FFF', fontSize: 18, fontWeight: '700' },
   heroCategoryBadge: {
     alignSelf: 'flex-start',
     backgroundColor: 'rgba(255,255,255,0.25)',
@@ -327,11 +367,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 5,
   },
-  heroCategoryText: {
-    color: '#FFF',
-    fontSize: 13,
-    fontWeight: '700',
-  },
+  heroCategoryText: { color: '#FFF', fontSize: 13, fontWeight: '700' },
   heroTitle: {
     color: '#FFFFFF',
     fontSize: 28,
@@ -341,44 +377,19 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 4,
   },
-  heroAttendees: {
-    color: 'rgba(255,255,255,0.85)',
-    fontSize: 14,
-    fontWeight: '600',
-  },
 
   // Body
-  body: {
-    padding: Spacing.three,
-    gap: Spacing.two,
-  },
-  infoRow: {
-    flexDirection: 'row',
-    gap: Spacing.two,
-  },
-  infoCard: {
-    flex: 1,
-    borderRadius: 16,
-    padding: Spacing.three,
-    gap: 4,
-  },
-  infoIcon: {
-    fontSize: 22,
-    marginBottom: 2,
-  },
+  body: { padding: Spacing.three, gap: Spacing.two },
+  infoRow: { flexDirection: 'row', gap: Spacing.two },
+  infoCard: { flex: 1, borderRadius: 16, padding: Spacing.three, gap: 4 },
+  infoIcon: { fontSize: 22, marginBottom: 2 },
   infoLabel: {
     fontSize: 12,
     fontWeight: '600',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
-  infoValue: {
-    fontSize: 14,
-    fontWeight: '700',
-    lineHeight: 20,
-  },
-
-  // Location
+  infoValue: { fontSize: 14, fontWeight: '700', lineHeight: 20 },
   locationCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -386,27 +397,10 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: Spacing.three,
   },
-  locationIcon: {
-    fontSize: 28,
-  },
-
-  // Description
-  descCard: {
-    borderRadius: 16,
-    padding: Spacing.three,
-    gap: Spacing.two,
-  },
-  descTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-  },
-  descText: {
-    fontSize: 15,
-    lineHeight: 24,
-    fontWeight: '400',
-  },
-
-  // Stat
+  locationIcon: { fontSize: 28 },
+  descCard: { borderRadius: 16, padding: Spacing.three, gap: Spacing.two },
+  descTitle: { fontSize: 17, fontWeight: '700' },
+  descText: { fontSize: 15, lineHeight: 24, fontWeight: '400' },
   statCard: {
     borderRadius: 16,
     padding: Spacing.four,
@@ -414,15 +408,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     gap: 6,
   },
-  statNumber: {
-    fontSize: 40,
-    fontWeight: '800',
-  },
-  statLabel: {
-    fontSize: 14,
-    fontWeight: '500',
-    textAlign: 'center',
-  },
+  statLabel: { fontSize: 14, fontWeight: '500', textAlign: 'center' },
 
   // RSVP footer
   rsvpFooter: {
@@ -443,9 +429,5 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.two,
     gap: Spacing.two,
   },
-  rsvpLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
+  rsvpLabel: { fontSize: 13, fontWeight: '600', textAlign: 'center' },
 });

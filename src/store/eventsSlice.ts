@@ -1,22 +1,28 @@
 import {
   apiCreateEvent,
+  apiDeleteEvent,
+  apiGetAllRSVPs,
   apiGetEventById,
   apiGetEvents,
-  apiRSVP,
+  ApiRSVP,
+  apiToggleRSVP,
   apiUpdateEvent,
 } from '@/api/mockApi';
 import { Event, EventFormValues, RSVPStatus } from '@/types/event';
 import { createAsyncThunk, createSlice } from '@reduxjs/toolkit';
 
-// ─── State ────────────────────────────────────────────────────────────────────
 interface EventsState {
   list: Event[];
   selectedEvent: Event | null;
   rsvpStatuses: Record<string, RSVPStatus>;
+  rsvpIds: Record<string, string>;
+  allRSVPs: ApiRSVP[];
   listStatus: 'idle' | 'loading' | 'succeeded' | 'failed';
   detailStatus: 'idle' | 'loading' | 'succeeded' | 'failed';
   submitStatus: 'idle' | 'loading' | 'succeeded' | 'failed';
+  deleteStatus: 'idle' | 'loading' | 'succeeded' | 'failed';
   rsvpStatus: 'idle' | 'loading';
+  rsvpsListStatus: 'idle' | 'loading' | 'succeeded' | 'failed';
   error: string | null;
 }
 
@@ -24,14 +30,17 @@ const initialState: EventsState = {
   list: [],
   selectedEvent: null,
   rsvpStatuses: {},
+  rsvpIds: {},
+  allRSVPs: [],
   listStatus: 'idle',
   detailStatus: 'idle',
   submitStatus: 'idle',
+  deleteStatus: 'idle',
   rsvpStatus: 'idle',
+  rsvpsListStatus: 'idle',
   error: null,
 };
 
-// ─── Thunks ───────────────────────────────────────────────────────────────────
 export const fetchEvents = createAsyncThunk('events/fetchAll', async () => {
   return apiGetEvents();
 });
@@ -42,17 +51,18 @@ export const fetchEventById = createAsyncThunk(
     const state = getState() as { events: EventsState };
     const cached = state.events.list.find((e) => e.id === id);
     if (cached) return cached;
-
     return apiGetEventById(id);
   },
 );
 
 export const createEvent = createAsyncThunk(
   'events/create',
-  async (values: EventFormValues) => {
+  async (values: EventFormValues, { getState }) => {
+    const state = getState() as any;
+    const organizer = state.user?.user?.username || 'You';
     const { category, ...rest } = values;
     if (!category) throw new Error('Category is required');
-    return apiCreateEvent({ ...rest, category });
+    return apiCreateEvent({ ...rest, category, organizer });
   },
 );
 
@@ -65,14 +75,36 @@ export const updateEvent = createAsyncThunk(
   },
 );
 
-export const rsvpEvent = createAsyncThunk(
-  'events/rsvp',
-  async ({ id, status }: { id: string; status: RSVPStatus }) => {
-    return apiRSVP(id, status);
+export const deleteEvent = createAsyncThunk(
+  'events/delete',
+  async (id: string) => {
+    await apiDeleteEvent(id);
+    return id;
   },
 );
 
-// ─── Slice ────────────────────────────────────────────────────────────────────
+export const rsvpEvent = createAsyncThunk(
+  'events/rsvp',
+  async (
+    { id, status }: { id: string; status: RSVPStatus },
+    { getState },
+  ) => {
+    const state = getState() as any;
+    const userId = state.user?.user?.userId;
+    return apiToggleRSVP(id, status, userId);
+  },
+);
+
+export const fetchAllRSVPs = createAsyncThunk(
+  'events/fetchAllRSVPs',
+  async (_, { getState }) => {
+    const state = getState() as any;
+    const userId = state.user?.user?.userId;
+    const all = await apiGetAllRSVPs();
+    if (!userId) return [];
+    return all.filter((r) => String(r.userId) === String(userId));
+  },
+);
 const eventsSlice = createSlice({
   name: 'events',
   initialState,
@@ -84,9 +116,11 @@ const eventsSlice = createSlice({
     clearSubmitStatus(state) {
       state.submitStatus = 'idle';
     },
+    clearDeleteStatus(state) {
+      state.deleteStatus = 'idle';
+    },
   },
   extraReducers: (builder) => {
-    // fetchEvents
     builder
       .addCase(fetchEvents.pending, (state) => {
         state.listStatus = 'loading';
@@ -101,7 +135,6 @@ const eventsSlice = createSlice({
         state.error = action.error.message ?? 'Failed to load events';
       });
 
-    // fetchEventById
     builder
       .addCase(fetchEventById.pending, (state) => {
         state.detailStatus = 'loading';
@@ -116,7 +149,6 @@ const eventsSlice = createSlice({
         state.error = action.error.message ?? 'Failed to load event';
       });
 
-    // createEvent
     builder
       .addCase(createEvent.pending, (state) => {
         state.submitStatus = 'loading';
@@ -130,7 +162,6 @@ const eventsSlice = createSlice({
         state.error = action.error.message ?? 'Failed to create event';
       });
 
-    // updateEvent
     builder
       .addCase(updateEvent.pending, (state) => {
         state.submitStatus = 'loading';
@@ -148,33 +179,62 @@ const eventsSlice = createSlice({
         state.error = action.error.message ?? 'Failed to update event';
       });
 
-    // rsvpEvent
+    builder
+      .addCase(deleteEvent.pending, (state) => {
+        state.deleteStatus = 'loading';
+      })
+      .addCase(deleteEvent.fulfilled, (state, action) => {
+        state.deleteStatus = 'succeeded';
+        state.list = state.list.filter((e) => e.id !== action.payload);
+        if (state.selectedEvent?.id === action.payload) {
+          state.selectedEvent = null;
+        }
+      })
+      .addCase(deleteEvent.rejected, (state, action) => {
+        state.deleteStatus = 'failed';
+        state.error = action.error.message ?? 'Failed to delete event';
+      });
+
     builder
       .addCase(rsvpEvent.pending, (state) => {
         state.rsvpStatus = 'loading';
       })
       .addCase(rsvpEvent.fulfilled, (state, action) => {
         state.rsvpStatus = 'idle';
-        const { eventId, status } = action.payload;
-        state.rsvpStatuses[eventId] = status;
+        const { eventId, status, rsvpId } = action.payload;
 
-        const listIdx = state.list.findIndex((e) => e.id === eventId);
-        if (listIdx !== -1) {
-          const prev = state.rsvpStatuses[eventId];
-          const event = state.list[listIdx];
-          if (prev === 'going' && status !== 'going')
-            event.attendees = Math.max(0, event.attendees - 1);
-          if (prev !== 'going' && status === 'going') event.attendees += 1;
-        }
-        if (state.selectedEvent?.id === eventId) {
-          state.rsvpStatuses[eventId] = status;
+        state.rsvpStatuses[eventId] = status;
+        if (rsvpId) {
+          state.rsvpIds[eventId] = rsvpId;
+        } else {
+          delete state.rsvpIds[eventId];
         }
       })
       .addCase(rsvpEvent.rejected, (state) => {
         state.rsvpStatus = 'idle';
       });
+
+    builder
+      .addCase(fetchAllRSVPs.pending, (state) => {
+        state.rsvpsListStatus = 'loading';
+      })
+      .addCase(fetchAllRSVPs.fulfilled, (state, action) => {
+        state.rsvpsListStatus = 'succeeded';
+        state.allRSVPs = action.payload;
+        // Reset rsvpStatuses and hydrate strictly for current user
+        state.rsvpStatuses = {};
+        state.rsvpIds = {};
+        action.payload.forEach((r) => {
+          state.rsvpStatuses[r.eventId] = r.status;
+          if (r.id) state.rsvpIds[r.eventId] = r.id;
+        });
+      })
+      .addCase(fetchAllRSVPs.rejected, (state) => {
+        state.rsvpsListStatus = 'failed';
+      });
   },
 });
 
-export const { clearSelectedEvent, clearSubmitStatus } = eventsSlice.actions;
+export const { clearSelectedEvent, clearSubmitStatus, clearDeleteStatus } =
+  eventsSlice.actions;
 export default eventsSlice.reducer;

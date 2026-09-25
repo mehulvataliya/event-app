@@ -18,7 +18,33 @@ type ApiEvent = Partial<Event> & {
   imageUrl?: string;
 };
 
-function normalise(raw: ApiEvent, fallbackId: string): Event {
+export interface ApiRSVP {
+  id: string;
+  eventId: string;
+  userId: string;
+  status: RSVPStatus;
+}
+const DEMO_USER_ID = 'demo-user-1';
+const COVER_COLOURS = [
+  '#6C63FF',
+  '#FF6584',
+  '#43B89C',
+  '#F9844A',
+  '#208AEF',
+  '#FFC75F',
+  '#90BE6D',
+  '#577590',
+  '#E63946',
+  '#4CC9F0',
+  '#B5838D',
+  '#7B2D8B',
+];
+
+function randomColour() {
+  return COVER_COLOURS[Math.floor(Math.random() * COVER_COLOURS.length)];
+}
+
+function normaliseEvent(raw: ApiEvent, fallbackId: string): Event {
   return {
     id: raw.id ?? fallbackId,
     title: raw.title,
@@ -32,18 +58,14 @@ function normalise(raw: ApiEvent, fallbackId: string): Event {
     category: raw.category ?? 'Technology',
   };
 }
-
-const rsvpDB: Record<string, RSVPStatus> = {};
-
 export async function apiGetEvents(): Promise<Event[]> {
   const { data } = await apiClient.get<ApiEvent[]>('/events');
-  return data.map((item, i) => normalise(item, String(i + 1)));
+  return data.map((item, i) => normaliseEvent(item, String(i + 1)));
 }
-
 export async function apiGetEventById(id: string): Promise<Event> {
   try {
     const { data } = await apiClient.get<ApiEvent>(`/events/${id}`);
-    return normalise(data, id);
+    return normaliseEvent(data, id);
   } catch (err) {
     const axiosErr = err as AxiosError;
     if (
@@ -58,53 +80,85 @@ export async function apiGetEventById(id: string): Promise<Event> {
     throw err;
   }
 }
-
 export async function apiCreateEvent(
-  payload: Omit<Event, 'id' | 'attendees' | 'coverColor' | 'organizer'>,
+  payload: Omit<Event, 'id' | 'attendees' | 'coverColor' | 'organizer'> & {
+    organizer?: string;
+  },
 ): Promise<Event> {
-  const colours = [
-    '#6C63FF',
-    '#FF6584',
-    '#43B89C',
-    '#F9844A',
-    '#208AEF',
-    '#FFC75F',
-    '#90BE6D',
-    '#577590',
-    '#E63946',
-    '#4CC9F0',
-    '#B5838D',
-    '#7B2D8B',
-  ];
   const body: Omit<Event, 'id'> = {
     ...payload,
     attendees: 0,
-    coverColor: colours[Math.floor(Math.random() * colours.length)],
-    organizer: 'You',
+    coverColor: randomColour(),
+    organizer: payload.organizer || 'You',
   };
   const { data } = await apiClient.post<ApiEvent>('/events', body);
-  return normalise(data, data.id ?? 'new');
+  return normaliseEvent(data, data.id ?? 'new');
 }
-
 export async function apiUpdateEvent(
   id: string,
   payload: Partial<Omit<Event, 'id'>>,
 ): Promise<Event> {
   const { data } = await apiClient.put<ApiEvent>(`/events/${id}`, payload);
-  return normalise(data, id);
+  return normaliseEvent(data, id);
 }
 export async function apiDeleteEvent(id: string): Promise<void> {
   await apiClient.delete(`/events/${id}`);
 }
-
-export async function apiRSVP(
-  id: string,
-  status: RSVPStatus,
-): Promise<{ eventId: string; status: RSVPStatus }> {
-  rsvpDB[id] = status;
-  return { eventId: id, status };
+export async function apiGetAllRSVPs(): Promise<ApiRSVP[]> {
+  const { data } = await apiClient.get<ApiRSVP[]>('/rsvps');
+  return data;
 }
+export async function apiGetRSVPsForEvent(eventId: string): Promise<ApiRSVP[]> {
+  const { data } = await apiClient.get<ApiRSVP[]>('/rsvps', {
+    params: { eventId },
+  });
+  return data;
+}
+export async function apiCreateRSVP(
+  eventId: string,
+  status: RSVPStatus,
+  userId: string = DEMO_USER_ID,
+): Promise<ApiRSVP> {
+  const { data } = await apiClient.post<ApiRSVP>('/rsvps', {
+    eventId,
+    userId,
+    status,
+  });
+  return data;
+}
+export async function apiUpdateRSVP(
+  rsvpId: string,
+  status: RSVPStatus,
+): Promise<ApiRSVP> {
+  const { data } = await apiClient.put<ApiRSVP>(`/rsvps/${rsvpId}`, { status });
+  return data;
+}
+export async function apiCancelRSVP(rsvpId: string): Promise<void> {
+  await apiClient.delete(`/rsvps/${rsvpId}`);
+}
+export async function apiToggleRSVP(
+  eventId: string,
+  newStatus: RSVPStatus,
+  userId?: string,
+): Promise<{ eventId: string; status: RSVPStatus; rsvpId: string | null }> {
+  const targetUserId = userId || DEMO_USER_ID;
+  const allRSVPs = await apiGetAllRSVPs();
+  const myRSVP = allRSVPs.find(
+    (r) =>
+      String(r.eventId) === String(eventId) &&
+      String(r.userId) === String(targetUserId),
+  );
 
-export async function apiGetRSVP(id: string): Promise<RSVPStatus> {
-  return rsvpDB[id] ?? null;
+  if (newStatus === null) {
+    if (myRSVP) await apiCancelRSVP(myRSVP.id);
+    return { eventId, status: null, rsvpId: null };
+  }
+
+  if (myRSVP) {
+    const updated = await apiUpdateRSVP(myRSVP.id, newStatus);
+    return { eventId, status: updated.status, rsvpId: updated.id };
+  } else {
+    const created = await apiCreateRSVP(eventId, newStatus, targetUserId);
+    return { eventId, status: created.status, rsvpId: created.id };
+  }
 }
