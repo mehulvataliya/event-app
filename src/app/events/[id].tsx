@@ -130,6 +130,12 @@ export default function EventDetailScreen() {
   const cardBg = isDark ? '#1A1A1E' : '#FFFFFF';
   const sectionBg = isDark ? '#212225' : '#F6F6FA';
 
+  const isOwner = Boolean(
+    user?.userId &&
+      e?.organizerId &&
+      String(user.userId) === String(e.organizerId),
+  );
+
   return (
     <View style={[styles.root, { backgroundColor: colors.background }]}>
       <ScrollView
@@ -145,22 +151,24 @@ export default function EventDetailScreen() {
               <Pressable style={styles.navBtn} onPress={() => router.back()}>
                 <Text style={styles.navBtnText}>←</Text>
               </Pressable>
-              <View style={styles.heroNavRight}>
-                <Pressable style={styles.navBtn} onPress={handleEdit}>
-                  <Text style={styles.navBtnText}>✎</Text>
-                </Pressable>
-                <Pressable
-                  style={[styles.navBtn, styles.navBtnDanger]}
-                  onPress={handleDelete}
-                  disabled={isDeleting}
-                >
-                  {isDeleting ? (
-                    <ActivityIndicator color="#fff" size="small" />
-                  ) : (
-                    <Text style={styles.navBtnText}>🗑</Text>
-                  )}
-                </Pressable>
-              </View>
+              {isOwner && (
+                <View style={styles.heroNavRight}>
+                  <Pressable style={styles.navBtn} onPress={handleEdit}>
+                    <Text style={styles.navBtnText}>✎</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.navBtn, styles.navBtnDanger]}
+                    onPress={handleDelete}
+                    disabled={isDeleting}
+                  >
+                    {isDeleting ? (
+                      <ActivityIndicator color="#fff" size="small" />
+                    ) : (
+                      <Text style={styles.navBtnText}>🗑</Text>
+                    )}
+                  </Pressable>
+                </View>
+              )}
             </View>
           </SafeAreaView>
 
@@ -203,7 +211,7 @@ export default function EventDetailScreen() {
             <InfoCard
               icon="🏢"
               label="Organizer"
-              value={e.organizer}
+              value={isOwner ? `${e.organizer} (You)` : e.organizer}
               bg={sectionBg}
               textColor={colors.text}
               subColor={colors.textSecondary}

@@ -54,6 +54,7 @@ function normaliseEvent(raw: ApiEvent, fallbackId: string): Event {
     location: raw.location,
     coverColor: raw.coverColor ?? '#6C63FF',
     organizer: raw.organizer ?? 'Unknown',
+    organizerId: raw.organizerId ?? undefined,
     attendees: raw.attendees ?? 0,
     category: raw.category ?? 'Technology',
   };
@@ -83,6 +84,7 @@ export async function apiGetEventById(id: string): Promise<Event> {
 export async function apiCreateEvent(
   payload: Omit<Event, 'id' | 'attendees' | 'coverColor' | 'organizer'> & {
     organizer?: string;
+    organizerId?: string;
   },
 ): Promise<Event> {
   const body: Omit<Event, 'id'> = {
@@ -90,6 +92,7 @@ export async function apiCreateEvent(
     attendees: 0,
     coverColor: randomColour(),
     organizer: payload.organizer || 'You',
+    organizerId: payload.organizerId,
   };
   const { data } = await apiClient.post<ApiEvent>('/events', body);
   return normaliseEvent(data, data.id ?? 'new');

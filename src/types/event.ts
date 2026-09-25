@@ -17,6 +17,7 @@ export interface Event {
   location: string;
   coverColor: string; // gradient start colour
   organizer: string;
+  organizerId?: string;
   attendees: number;
   category: EventCategory;
   imageUrl?: string;

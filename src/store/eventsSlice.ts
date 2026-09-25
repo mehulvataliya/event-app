@@ -59,10 +59,12 @@ export const createEvent = createAsyncThunk(
   'events/create',
   async (values: EventFormValues, { getState }) => {
     const state = getState() as any;
-    const organizer = state.user?.user?.username || 'You';
+    const user = state.user?.user;
+    const organizer = user?.username || 'You';
+    const organizerId = user?.userId;
     const { category, ...rest } = values;
     if (!category) throw new Error('Category is required');
-    return apiCreateEvent({ ...rest, category, organizer });
+    return apiCreateEvent({ ...rest, category, organizer, organizerId });
   },
 );
 

@@ -3,6 +3,7 @@ import { useFormik } from 'formik';
 import { useEffect } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -65,6 +66,7 @@ export default function CreateEventScreen() {
   const isEditMode = Boolean(id);
   const dispatch = useAppDispatch();
   const { selectedEvent, submitStatus } = useAppSelector((s) => s.events);
+  const user = useAppSelector((s) => s.user.user);
   const scheme = useColorScheme();
   const isDark = scheme === 'dark';
   const colors = Colors[isDark ? 'dark' : 'light'];
@@ -77,6 +79,24 @@ export default function CreateEventScreen() {
       dispatch(clearSubmitStatus());
     };
   }, [id, isEditMode, dispatch]);
+
+  // Verify ownership in edit mode
+  useEffect(() => {
+    if (isEditMode && selectedEvent) {
+      const isOwner = Boolean(
+        user?.userId &&
+          selectedEvent?.organizerId &&
+          String(user.userId) === String(selectedEvent.organizerId),
+      );
+      if (!isOwner) {
+        Alert.alert(
+          'Permission Denied',
+          'Only the creator of this event can edit it.',
+        );
+        router.back();
+      }
+    }
+  }, [isEditMode, selectedEvent, user]);
 
   // On successful submit, go back
   useEffect(() => {
@@ -93,8 +113,6 @@ export default function CreateEventScreen() {
     location: isEditMode && selectedEvent ? selectedEvent.location : '',
     category: isEditMode && selectedEvent ? selectedEvent.category : '',
   };
-
-  const user = useAppSelector((s) => s.user.user);
 
   const formik = useFormik<EventFormValues>({
     initialValues,
