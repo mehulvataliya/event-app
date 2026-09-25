@@ -1,10 +1,14 @@
+import DateTimePicker, {
+  DateTimePickerEvent,
+} from '@react-native-community/datetimepicker';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useFormik } from 'formik';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -41,6 +45,40 @@ const CATEGORIES: EventCategory[] = [
   'Education',
 ];
 
+function formatDisplayDate(dateStr: string): string {
+  if (!dateStr) return '';
+  try {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    if (!y || !m || !d) return dateStr;
+    const dateObj = new Date(y, m - 1, d);
+    return dateObj.toLocaleDateString('en-IN', {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
+  } catch {
+    return dateStr;
+  }
+}
+
+function formatDisplayTime(timeStr: string): string {
+  if (!timeStr) return '';
+  try {
+    const [h, m] = timeStr.split(':').map(Number);
+    if (isNaN(h) || isNaN(m)) return timeStr;
+    const dateObj = new Date();
+    dateObj.setHours(h, m);
+    return dateObj.toLocaleTimeString('en-IN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    });
+  } catch {
+    return timeStr;
+  }
+}
+
 const validationSchema = Yup.object({
   title: Yup.string()
     .min(3, 'At least 3 characters')
@@ -50,13 +88,16 @@ const validationSchema = Yup.object({
     .required('Description is required'),
   date: Yup.string()
     .required('Date is required')
-    .test('future', 'Date must be in the future', (val) => {
+    .test('future', 'Date must be today or in the future', (val) => {
       if (!val) return false;
-      return new Date(val) > new Date(new Date().toDateString());
+      const [y, m, d] = val.split('-').map(Number);
+      if (!y || !m || !d) return false;
+      const selected = new Date(y, m - 1, d);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      return selected >= today;
     }),
-  time: Yup.string()
-    .matches(/^\d{2}:\d{2}$/, 'Use HH:MM format (e.g. 09:30)')
-    .required('Time is required'),
+  time: Yup.string().required('Time is required'),
   location: Yup.string().required('Location is required'),
   category: Yup.string().required('Category is required'),
 });
@@ -70,6 +111,9 @@ export default function CreateEventScreen() {
   const scheme = useColorScheme();
   const isDark = scheme === 'dark';
   const colors = Colors[isDark ? 'dark' : 'light'];
+
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
 
   useEffect(() => {
     if (isEditMode && id) {
@@ -130,6 +174,61 @@ export default function CreateEventScreen() {
       }
     },
   });
+
+  const currentDateValue = (() => {
+    if (formik.values.date) {
+      const [y, m, d] = formik.values.date.split('-').map(Number);
+      if (y && m && d) return new Date(y, m - 1, d);
+    }
+    const tm = new Date();
+    tm.setDate(tm.getDate() + 1);
+    return tm;
+  })();
+
+  const currentTimeValue = (() => {
+    if (formik.values.time) {
+      const [h, m] = formik.values.time.split(':').map(Number);
+      if (!isNaN(h) && !isNaN(m)) {
+        const dt = new Date();
+        dt.setHours(h, m, 0, 0);
+        return dt;
+      }
+    }
+    const dt = new Date();
+    dt.setHours(10, 0, 0, 0);
+    return dt;
+  })();
+
+  const handleDateChange = (
+    event: DateTimePickerEvent,
+    selectedDate?: Date,
+  ) => {
+    if (Platform.OS === 'android') {
+      setShowDatePicker(false);
+    }
+    if (selectedDate && event.type !== 'dismissed') {
+      const year = selectedDate.getFullYear();
+      const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
+      const day = String(selectedDate.getDate()).padStart(2, '0');
+      formik.setFieldValue('date', `${year}-${month}-${day}`);
+      formik.setFieldTouched('date', true);
+    }
+  };
+
+  const handleTimeChange = (
+    event: DateTimePickerEvent,
+    selectedTime?: Date,
+  ) => {
+    if (Platform.OS === 'android') {
+      setShowTimePicker(false);
+    }
+    if (selectedTime && event.type !== 'dismissed') {
+      const hours = String(selectedTime.getHours()).padStart(2, '0');
+      const minutes = String(selectedTime.getMinutes()).padStart(2, '0');
+      formik.setFieldValue('time', `${hours}:${minutes}`);
+      formik.setFieldTouched('time', true);
+    }
+  };
 
   const inputBg = isDark ? '#212225' : '#F0F0F3';
   const borderColor = isDark ? '#2E3135' : '#E0E1E6';
@@ -201,12 +300,12 @@ export default function CreateEventScreen() {
           style={styles.row}
         >
           <View style={{ flex: 1 }}>
-            <FormField
+            <PickerTriggerField
               label="Date"
-              placeholder="YYYY-MM-DD"
-              value={formik.values.date}
-              onChangeText={formik.handleChange('date')}
-              onBlur={formik.handleBlur('date')}
+              placeholder="Select Date"
+              value={formatDisplayDate(formik.values.date)}
+              icon="📅"
+              onPress={() => setShowDatePicker(true)}
               error={formik.touched.date ? formik.errors.date : undefined}
               inputBg={inputBg}
               borderColor={borderColor}
@@ -215,12 +314,12 @@ export default function CreateEventScreen() {
             />
           </View>
           <View style={{ flex: 1 }}>
-            <FormField
+            <PickerTriggerField
               label="Time"
-              placeholder="HH:MM"
-              value={formik.values.time}
-              onChangeText={formik.handleChange('time')}
-              onBlur={formik.handleBlur('time')}
+              placeholder="Select Time"
+              value={formatDisplayTime(formik.values.time)}
+              icon="⏰"
+              onPress={() => setShowTimePicker(true)}
               error={formik.touched.time ? formik.errors.time : undefined}
               inputBg={inputBg}
               borderColor={borderColor}
@@ -300,6 +399,126 @@ export default function CreateEventScreen() {
           </Pressable>
         </Animated.View>
       </ScrollView>
+
+      {/* Date Picker Modal/Component */}
+      {showDatePicker &&
+        (Platform.OS === 'android' ? (
+          <DateTimePicker
+            value={currentDateValue}
+            mode="date"
+            display="default"
+            onChange={handleDateChange}
+            minimumDate={new Date()}
+          />
+        ) : (
+          <Modal
+            transparent
+            animationType="slide"
+            visible={showDatePicker}
+            onRequestClose={() => setShowDatePicker(false)}
+          >
+            <View style={styles.pickerModalOverlay}>
+              <Pressable
+                style={styles.pickerModalBackdrop}
+                onPress={() => setShowDatePicker(false)}
+              />
+              <View
+                style={[
+                  styles.pickerModalCard,
+                  { backgroundColor: isDark ? '#1F2023' : '#FFFFFF' },
+                ]}
+              >
+                <View style={styles.pickerModalHeader}>
+                  <Text style={[styles.pickerModalTitle, { color: colors.text }]}>
+                    Select Date
+                  </Text>
+                  <Pressable
+                    style={styles.pickerDoneBtn}
+                    onPress={() => {
+                      if (!formik.values.date) {
+                        const year = currentDateValue.getFullYear();
+                        const month = String(currentDateValue.getMonth() + 1).padStart(2, '0');
+                        const day = String(currentDateValue.getDate()).padStart(2, '0');
+                        formik.setFieldValue('date', `${year}-${month}-${day}`);
+                      }
+                      setShowDatePicker(false);
+                    }}
+                  >
+                    <Text style={styles.pickerDoneText}>Done</Text>
+                  </Pressable>
+                </View>
+                <DateTimePicker
+                  value={currentDateValue}
+                  mode="date"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  onChange={handleDateChange}
+                  minimumDate={new Date()}
+                  textColor={colors.text}
+                  style={{ height: 200 }}
+                />
+              </View>
+            </View>
+          </Modal>
+        ))}
+
+      {/* Time Picker Modal/Component */}
+      {showTimePicker &&
+        (Platform.OS === 'android' ? (
+          <DateTimePicker
+            value={currentTimeValue}
+            mode="time"
+            display="default"
+            onChange={handleTimeChange}
+          />
+        ) : (
+          <Modal
+            transparent
+            animationType="slide"
+            visible={showTimePicker}
+            onRequestClose={() => setShowTimePicker(false)}
+          >
+            <View style={styles.pickerModalOverlay}>
+              <Pressable
+                style={styles.pickerModalBackdrop}
+                onPress={() => setShowTimePicker(false)}
+              />
+              <View
+                style={[
+                  styles.pickerModalCard,
+                  { backgroundColor: isDark ? '#1F2023' : '#FFFFFF' },
+                ]}
+              >
+                <View style={styles.pickerModalHeader}>
+                  <Text style={[styles.pickerModalTitle, { color: colors.text }]}>
+                    Select Time
+                  </Text>
+                  <Pressable
+                    style={styles.pickerDoneBtn}
+                    onPress={() => {
+                      if (!formik.values.time) {
+                        const hours = String(currentTimeValue.getHours()).padStart(2, '0');
+                        const minutes = String(currentTimeValue.getMinutes()).padStart(2, '0');
+                        formik.setFieldValue('time', `${hours}:${minutes}`);
+                      }
+                      setShowTimePicker(false);
+                    }}
+                  >
+                    <Text style={styles.pickerDoneText}>Done</Text>
+                  </Pressable>
+                </View>
+                <DateTimePicker
+                  value={currentTimeValue}
+                  mode="time"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  onChange={handleTimeChange}
+                  textColor={colors.text}
+                  style={{ height: 200 }}
+                />
+              </View>
+            </View>
+          </Modal>
+        ))}
+
       <UserProfileModal />
     </KeyboardAvoidingView>
   );
@@ -361,6 +580,62 @@ function FormField({
   );
 }
 
+// ─── PickerTriggerField ───────────────────────────────────────────────────────
+interface PickerTriggerFieldProps {
+  label: string;
+  placeholder: string;
+  value: string;
+  icon: string;
+  onPress: () => void;
+  error?: string;
+  inputBg: string;
+  borderColor: string;
+  textColor: string;
+  placeholderColor: string;
+}
+
+function PickerTriggerField({
+  label,
+  placeholder,
+  value,
+  icon,
+  onPress,
+  error,
+  inputBg,
+  borderColor,
+  textColor,
+  placeholderColor,
+}: PickerTriggerFieldProps) {
+  const hasValue = Boolean(value);
+  return (
+    <View style={styles.fieldWrap}>
+      <Text style={[styles.label, { color: placeholderColor }]}>{label}</Text>
+      <Pressable
+        style={[
+          styles.pickerTrigger,
+          {
+            backgroundColor: inputBg,
+            borderColor: error ? '#EF4444' : borderColor,
+          },
+        ]}
+        onPress={onPress}
+      >
+        <Text style={{ fontSize: 16 }}>{icon}</Text>
+        <Text
+          style={[
+            styles.pickerTriggerText,
+            { color: hasValue ? textColor : placeholderColor },
+          ]}
+          numberOfLines={1}
+        >
+          {hasValue ? value : placeholder}
+        </Text>
+      </Pressable>
+      {error && <Text style={styles.errorText}>{error}</Text>}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   root: { flex: 1 },
   header: {
@@ -404,6 +679,20 @@ const styles = StyleSheet.create({
     minHeight: 100,
     paddingTop: 12,
   },
+  pickerTrigger: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: 14,
+  },
+  pickerTriggerText: {
+    fontSize: 14,
+    fontWeight: '600',
+    flex: 1,
+  },
   errorText: {
     color: '#EF4444',
     fontSize: 12,
@@ -444,5 +733,45 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '700',
+  },
+
+  // Picker Modal Styles
+  pickerModalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  pickerModalBackdrop: {
+    ...StyleSheet.absoluteFill,
+  },
+  pickerModalCard: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: Spacing.three,
+    paddingBottom: Spacing.five,
+  },
+  pickerModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingBottom: Spacing.two,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(128,128,128,0.2)',
+    marginBottom: Spacing.two,
+  },
+  pickerModalTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  pickerDoneBtn: {
+    backgroundColor: '#6C63FF',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 12,
+  },
+  pickerDoneText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 14,
   },
 });
